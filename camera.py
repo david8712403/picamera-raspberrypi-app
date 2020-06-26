@@ -35,6 +35,7 @@ ip = str(check_output(['hostname', '-I']))
 ip = re.sub('[a-z\ \' ]', '', ip)
 ip = ip[0:-1]
 print(ip)
+
 version = "0.7"
 
 PAGE="""\
@@ -161,9 +162,9 @@ class DBThread(threading.Thread):
                 print("screenshot:" + str(screenshot))
                 t = time.time()
                 date = datetime.datetime.fromtimestamp(t).strftime('%Y%m%d%H%M%S')
-                self.picamera.capture('/home/ubuntu/Downloads/images/'+ str(date) +'.jpg')
+                self.picamera.capture('/home/pi/Desktop/images/'+ str(date) +'.jpg')
                 print("capture")
-                imgPath = '/home/ubuntu/Downloads/images/'+ str(date) +'.jpg'
+                imgPath = '/home/pi/Desktop/images/'+ str(date) +'.jpg'
                 imgBlob = bucket.blob('images/'+ str(date) + '.jpg')
                 imgBlob.upload_from_filename(imgPath)
                 imgData = {\
@@ -197,12 +198,12 @@ class DBThread(threading.Thread):
                 prev_angle = angle
 
             if prev_angle1 != angle1:
-                print("angle: " + str(angle1))
+                print("angle1: " + str(angle1))
                 r =  range(prev_angle1, angle1, 1)
                 if(prev_angle1 > angle1):
                     r = range(prev_angle1, angle1, -1)
                 for x in r:
-                    pi.hardware_PWM(PWM_CONTROL_PIN_1, PWM_FREQ, angle_to_duty_cycle(x))
+                    #pi.hardware_PWM(PWM_CONTROL_PIN_1, PWM_FREQ, angle_to_duty_cycle(x))
                     time.sleep(0.05)
                 prev_angle1 = angle1
 
@@ -227,9 +228,9 @@ class LabelThread(threading.Thread):
                 time.sleep(1)
 
             if self.clockwise == True:
-                self.angle += 0
+                self.angle += 1
             else:
-                self.angle -= 0
+                self.angle -= 1
             self.camera.annotate_text = "ip:" + ip + " " +  datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + " v:" + version
             self.camera.annotate_text_size = 30
             #pi.hardware_PWM(PWM_CONTROL_PIN, PWM_FREQ, angle_to_duty_cycle(self.angle))
@@ -238,7 +239,7 @@ class LabelThread(threading.Thread):
 
 with picamera.PiCamera(resolution='1280x720', framerate=40) as camera:
     output = StreamingOutput()
-    camera.rotation = 180
+    camera.rotation = 0
     camera.start_recording(output, format='mjpeg')
 
     dbThread = DBThread(camera)
