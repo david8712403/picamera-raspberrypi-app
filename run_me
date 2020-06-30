@@ -1,0 +1,4 @@
+#!/bin/bash
+source PiCameraEnv/bin/activate
+sudo pigpiod
+python camera.py

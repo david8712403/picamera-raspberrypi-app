@@ -9,6 +9,7 @@ import time
 import datetime
 import threading
 
+import paho.mqtt.client as mqtt  
 import socketserver
 from threading import Condition
 from http import server
@@ -31,31 +32,29 @@ pi = pigpio.pi()
 #get pi host ip
 from subprocess import check_output
 import re
-ip = str(check_output(['hostname', '-I']))
-ip = re.sub('[a-z\ \' ]', '', ip)
-ip = ip[0:-1]
+ip = str(check_output(['hostname', '-I']).decode('utf-8')).replace('\n', '').rstrip()
 print(ip)
 
-version = "0.7"
+version = "1.0"
 
 PAGE="""\
 <html>
-<head>
-<style>
-p.serif {
-  font-family: "Times New Roman", Times, serif;
-}
-p.sansserif {
-  font-family: Arial, Helvetica, sans-serif;
-}
-body {
-  background-color: white;
-}
-</style>
-</head>
-<body>
-<center><img src="stream.mjpg" width="640" height="340"></center>
-</body>
+    <head>
+        <style>
+            p.serif {
+              font-family: "Times New Roman", Times, serif;
+            }
+            p.sansserif {
+              font-family: Arial, Helvetica, sans-serif;
+            }
+            body {
+              background-color: white;
+            }
+        </style>
+    </head>
+    <body>
+        <center><img src="stream.mjpg" width="640" height="340"></center>
+    </body>
 </html>
 """
 
@@ -139,78 +138,29 @@ class DBThread(threading.Thread):
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"]=Config.CerficateRef
         firebase.FirebaseApplication(dbUrl + '.json')
         screenshotRef = db.reference('device/home/screenshot')
-        screenshot = False
         client = storage.Client()
         bucket = client.get_bucket(imgUrl)
-        screenshotRef.set(False)
-        prev_angle = 0
-        prev_angle1 = 0
-        prev_zoom = 100
 
-        while True:
-            try:
-                data = get(dbUrl + '.json').json()
-            finally:
-                pass
-            
-            angle = data["device"]["home"]["angle"]
-            angle1 = data["device"]["home"]["angle1"]
-            screenshot = data["device"]["home"]["screenshot"]
-            zoom = data['device']['home']['zoom']
-            
-            if screenshot == True:
-                print("screenshot:" + str(screenshot))
-                t = time.time()
-                date = datetime.datetime.fromtimestamp(t).strftime('%Y%m%d%H%M%S')
-                self.picamera.capture('/home/pi/Desktop/images/'+ str(date) +'.jpg')
-                print("capture")
-                imgPath = '/home/pi/Desktop/images/'+ str(date) +'.jpg'
-                imgBlob = bucket.blob('images/'+ str(date) + '.jpg')
-                imgBlob.upload_from_filename(imgPath)
-                imgData = {\
-                    'createAt':str(datetime.datetime.fromtimestamp(t)),\
-                    'name': str(date)+'.jpg',\
-                    'url': imgUrl + '/' + str(date) + '.jpg'\
-                    }
-                result = requests.post(postRef, data=json.dumps(imgData))
-                print("response:" + result.text)
-                screenshotRef.set(False)
-                self.picamera.annotate_text = "picture saved!"
+        t = time.time()
+        date = datetime.datetime.fromtimestamp(t).strftime('%Y%m%d%H%M%S')
+        self.picamera.capture('/home/pi/Desktop/images/'+ str(date) +'.jpg')
+        print("capture")
+        imgPath = '/home/pi/Desktop/images/'+ str(date) +'.jpg'
+        imgBlob = bucket.blob('images/'+ str(date) + '.jpg')
+        imgBlob.upload_from_filename(imgPath)
+        imgData = {'createAt':str(datetime.datetime.fromtimestamp(t)),
+                   'name': str(date)+'.jpg',
+                   'url': imgUrl + '/' + str(date) + '.jpg'}
+        result = requests.post(postRef, data=json.dumps(imgData))
+        print("response:" + result.text)
+        self.picamera.annotate_text = "picture saved!"
 
-            if prev_zoom != zoom:
-                print("zoom: " + str(zoom))
-                r = range(prev_zoom, zoom, 1)
-                if(prev_zoom > zoom):
-                    r = range(prev_zoom, zoom, -1)
-                for x in r:
-                    self.picamera.zoom=((50.-x/2.)/100.,(50.-x/2.)/100.,x/100.,x/100.)
-                    time.sleep(0.05)
-                prev_zoom = zoom
-
-            if prev_angle != angle:
-                print("angle: " + str(angle))
-                r =  range(prev_angle, angle, 1)
-                if(prev_angle > angle):
-                    r = range(prev_angle, angle, -1)
-                for x in r:
-                    pi.hardware_PWM(PWM_CONTROL_PIN, PWM_FREQ, angle_to_duty_cycle(x))
-                    time.sleep(0.05)
-                prev_angle = angle
-
-            if prev_angle1 != angle1:
-                print("angle1: " + str(angle1))
-                r =  range(prev_angle1, angle1, 1)
-                if(prev_angle1 > angle1):
-                    r = range(prev_angle1, angle1, -1)
-                for x in r:
-                    #pi.hardware_PWM(PWM_CONTROL_PIN_1, PWM_FREQ, angle_to_duty_cycle(x))
-                    time.sleep(0.05)
-                prev_angle1 = angle1
-
+           
 class LabelThread(threading.Thread):
-    def __init__(self, camera):
+    def __init__(self, camera, mqtt_client):
         threading.Thread.__init__(self)
         self.camera = camera
+        self.mqtt_client = mqtt_client
         self.camera.annotate_background = picamera.color.Color('black')
         self.angle = 0
         pi.hardware_PWM(PWM_CONTROL_PIN, PWM_FREQ, angle_to_duty_cycle(self.angle))
@@ -219,7 +169,8 @@ class LabelThread(threading.Thread):
         
     def run(self):
         while True:
-            time.sleep(0.1)
+            self.mqtt_client.loop()
+            #time.sleep(0.1)
             if self.angle == 60:
                 self.clockwise = False
                 time.sleep(1)
@@ -236,23 +187,61 @@ class LabelThread(threading.Thread):
             #pi.hardware_PWM(PWM_CONTROL_PIN, PWM_FREQ, angle_to_duty_cycle(self.angle))
             #self.camera.brightness += 5
 
+camera =  picamera.PiCamera(resolution='1280x720', framerate=40)
 
-with picamera.PiCamera(resolution='1280x720', framerate=40) as camera:
-    output = StreamingOutput()
-    camera.rotation = 0
-    camera.start_recording(output, format='mjpeg')
+client_sub = mqtt.Client(client_id='chen',
+        clean_session=True,
+        transport='tcp')
 
-    dbThread = DBThread(camera)
-    dbThread.start()
+def on_connect(client, userdata, flag, rc):
+    print("Connected with result code "+str(rc))
+    client.subscribe("device/angle")
+    client.subscribe("device/zoom")
+    client.subscribe("device/screenshot")
 
-    labelThread = LabelThread(camera)
-    labelThread.start()
+def on_message(client, userdata, msg):
+    
+    if msg.topic == 'device/angle':
+        print(msg.topic+" "+str(msg.payload.decode("utf-8")))
+        angle = int(msg.payload.decode("utf-8"))
+        pi.hardware_PWM(PWM_CONTROL_PIN,
+                        PWM_FREQ,
+                        angle_to_duty_cycle(angle))
+    elif msg.topic == 'device/zoom':
+        print(msg.topic+" "+str(msg.payload.decode("utf-8")))
+        zoom = int(msg.payload.decode("utf-8"))
+        camera.zoom=((50.-zoom/2.)/100.,(50.-zoom/2.)/100.,zoom/100.,zoom/100.)
+    
+    elif msg.topic == 'device/screenshot':
+        print(msg.topic+" "+str(msg.payload.decode("utf-8")))
+        dbThread = DBThread(camera)
+        dbThread.start()
         
-    try:
-        address = (ip, 8000)
-        server = StreamingServer(address, StreamingHandler)
-        server.serve_forever()
-    except KeyboardInterrupt:
-        camera.stop_recording()
-    finally:
-        camera.stop_recording()
+        
+
+client_sub.on_connect = on_connect
+client_sub.on_message = on_message
+
+client_sub.username_pw_set(Config.mqtt_user, password=Config.mqtt_pwd)
+client_sub.connect(ip, port=1883, keepalive=60)
+
+pi.hardware_PWM(PWM_CONTROL_PIN,PWM_FREQ,angle_to_duty_cycle(0))
+time.sleep(1)
+pi.hardware_PWM(PWM_CONTROL_PIN,PWM_FREQ,angle_to_duty_cycle(170))
+
+
+
+output = StreamingOutput()
+camera.rotation = 180
+camera.start_recording(output, format='mjpeg')
+labelThread = LabelThread(camera, client_sub)
+labelThread.start()
+    
+try:
+    address = (ip, 8000)
+    server = StreamingServer(address, StreamingHandler)
+    server.serve_forever()
+except KeyboardInterrupt:
+    camera.stop_recording()
+finally:
+    camera.stop_recording()
