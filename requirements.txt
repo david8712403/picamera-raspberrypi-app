@@ -47,4 +47,4 @@ six==1.15.0
 soupsieve==2.0.1
 sseclient==0.0.26
 uritemplate==3.0.1
-urllib3==1.25.9
+urllib3==1.26.5
