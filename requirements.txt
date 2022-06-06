@@ -48,3 +48,4 @@ soupsieve==2.0.1
 sseclient==0.0.26
 uritemplate==3.0.1
 urllib3==1.26.5
+python-dotenv==0.20.0

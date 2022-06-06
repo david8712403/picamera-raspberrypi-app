@@ -21,7 +21,10 @@ import requests
 from requests import get, post
 import json
 
-import Config
+from dotenv import load_dotenv
+
+#config = dotenv_values(".env")
+load_dotenv()
 
 PWM_CONTROL_PIN = 18
 PWM_CONTROL_PIN_1 = 19
@@ -32,7 +35,8 @@ pi = pigpio.pi()
 #get pi host ip
 from subprocess import check_output
 import re
-ip = str(check_output(['hostname', '-I']).decode('utf-8')).replace('\n', '').rstrip()
+local_ip = str(check_output(['hostname', '-I']).decode('utf-8')).replace('\n', '').rstrip()
+ip = os.getenv('MQTT_IP')
 print(ip)
 
 version = "1.0"
@@ -128,14 +132,14 @@ class DBThread(threading.Thread):
         self.picamera = picamera
     
     def run(self):
-        dbUrl = Config.dbUrl
-        postRef = Config.postRef
-        imgUrl = Config.imgUrl
+        dbUrl = os.getenv('DB_URL')
+        postRef = os.getenv('POST_REF')
+        imgUrl = os.getenv('IMG_URL')
         if not firebase_admin._apps:
-            cred = credentials.Certificate(Config.CerficateRef)
+            cred = credentials.Certificate(os.getenv('CERF_REF'))
             default_app = firebase_admin.initialize_app(cred, {'databaseURL': dbUrl, 'storageBucket':imgUrl})
     
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"]=Config.CerficateRef
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv('CERF_REF')
         firebase.FirebaseApplication(dbUrl + '.json')
         screenshotRef = db.reference('device/home/screenshot')
         client = storage.Client()
@@ -143,9 +147,9 @@ class DBThread(threading.Thread):
 
         t = time.time()
         date = datetime.datetime.fromtimestamp(t).strftime('%Y%m%d%H%M%S')
-        self.picamera.capture('/home/pi/Desktop/images/'+ str(date) +'.jpg')
+        imgPath = f'{os.getenv("IMG_TMP_REF")}/{str(date)}.jpg'
+        self.picamera.capture(imgPath)
         print("capture")
-        imgPath = '/home/pi/Desktop/images/'+ str(date) +'.jpg'
         imgBlob = bucket.blob('images/'+ str(date) + '.jpg')
         imgBlob.upload_from_filename(imgPath)
         imgData = {'createAt':str(datetime.datetime.fromtimestamp(t)),
@@ -182,7 +186,8 @@ class LabelThread(threading.Thread):
                 self.angle += 1
             else:
                 self.angle -= 1
-            self.camera.annotate_text = "ip:" + ip + " " +  datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + " v:" + version
+            # self.camera.annotate_text = "ip:" + ip + " " +  datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + " v:" + version
+            self.camera.annotate_text = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + " v:" + version
             self.camera.annotate_text_size = 30
             #pi.hardware_PWM(PWM_CONTROL_PIN, PWM_FREQ, angle_to_duty_cycle(self.angle))
             #self.camera.brightness += 5
@@ -222,7 +227,7 @@ def on_message(client, userdata, msg):
 client_sub.on_connect = on_connect
 client_sub.on_message = on_message
 
-client_sub.username_pw_set(Config.mqtt_user, password=Config.mqtt_pwd)
+# client_sub.username_pw_set(Config.mqtt_user, password=Config.mqtt_pwd)
 client_sub.connect(ip, port=1883, keepalive=60)
 
 pi.hardware_PWM(PWM_CONTROL_PIN,PWM_FREQ,angle_to_duty_cycle(0))
@@ -238,7 +243,7 @@ labelThread = LabelThread(camera, client_sub)
 labelThread.start()
     
 try:
-    address = (ip, 8000)
+    address = ("127.0.0.1", 8000)
     server = StreamingServer(address, StreamingHandler)
     server.serve_forever()
 except KeyboardInterrupt:

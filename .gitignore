@@ -1,2 +1,5 @@
 Config.py
 __pycache__
+/venv
+.env
+secret.json
