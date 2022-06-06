@@ -5,6 +5,17 @@ PiCamera Control App Demo: https://www.youtube.com/watch?v=-pmIIZanDHg
 
 PiCamera Control App Source code: https://github.com/daivd8712403/PiCameraAndroidApp
 
+## 執行
+
+在背景執行
+```shell
+./run_me &>/dev/null &
+```
+
+查詢佔用camera資源的程式
+```shell
+ps ax | grep camera
+```
 
 ## 環境變數
 
